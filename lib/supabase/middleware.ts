@@ -1,0 +1,76 @@
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export const updateSession = async (request: NextRequest) => {
+  let supabaseResponse = NextResponse.next({
+    request,
+  })
+
+  // Skip auth if Supabase credentials are not configured
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey || 
+      supabaseUrl.includes('your-project-url') || 
+      supabaseAnonKey.includes('your-anon-key')) {
+    return supabaseResponse
+  }
+
+  const supabase = createServerClient(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            request.cookies.set(name, value)
+          )
+          supabaseResponse = NextResponse.next({
+            request,
+          })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  // IMPORTANT: Avoid writing any logic between createServerClient and
+  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
+  // issues with users being randomly logged out.
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  // Protected routes — redirect unauthenticated users to /login
+  // API routes handle their own auth (return 401 JSON, not redirects)
+  const protectedPaths = ['/new', '/settings']
+  const protectedPatterns = ['/edit', '/fork']
+  const pathname = request.nextUrl.pathname
+
+  const isApiRoute = pathname.startsWith('/api/')
+  const isProtected =
+    !isApiRoute &&
+    (protectedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
+    protectedPatterns.some((p) => pathname.includes(p)))
+
+  if (isProtected && !user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('next', pathname)
+
+    const redirectResponse = NextResponse.redirect(url)
+    // Preserve Supabase cookies on the redirect response
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value)
+    })
+    return redirectResponse
+  }
+
+  return supabaseResponse
+}

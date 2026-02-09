@@ -1,0 +1,49 @@
+You are building PromptStack — a community platform where vibe coders share, fork, and remix prompt workflows behind real projects.
+
+## Tech Stack
+- Framework: Next.js 14 (App Router)
+- Language: TypeScript (strict mode)
+- Styling: Tailwind CSS
+- Database: Supabase (Postgres)
+- Auth: Supabase Auth (GitHub + Google OAuth)
+- Image Storage: Supabase Storage
+- Hosting: Vercel
+- Validation: Zod
+
+## Project Structure
+/src
+  /app          → Next.js App Router pages
+  /components   → Reusable React components
+  /lib          → Utilities, Supabase client, helpers
+  /types        → TypeScript types and Zod schemas
+  /hooks        → Custom React hooks
+
+## Coding Conventions
+- Use TypeScript strict mode always
+- Use server components by default, client components only when needed
+- Use Supabase SSR helpers for auth
+- Keep components small and focused
+- Use Zod for all form validation and API input validation
+- Use Tailwind for all styling — no CSS modules, no styled-components
+- Prefer named exports over default exports
+- Use arrow functions for components
+- Error boundaries for all async operations
+
+## Design System
+- Dark theme (bg: #09090b, text: #e8e8ed)
+- Font: JetBrains Mono for code/UI, system font for body
+- Green accent: #3ddc84
+- Border color: #1c1c25
+- Minimal, developer-focused aesthetic
+- No emojis in UI except where specifically needed
+
+## Database
+- All queries go through Supabase client
+- Use Row Level Security (RLS) policies
+- Never expose service role key to client
+
+## Important
+- No console.log in production code — use proper error handling
+- Always handle loading and error states
+- Every page must have proper meta tags for SEO
+- All forms must have proper validation with user-friendly error messages
