@@ -4,6 +4,8 @@ import { Code, ClipboardPaste, Rocket } from 'lucide-react'
 import { Reveal } from '@/components/reveal'
 import { SessionExport } from '@/components/session-export'
 import { buildMetadata } from '@/lib/seo'
+import { createClient } from '@/lib/supabase/server'
+import { getProjectsByUser } from '@/lib/queries/projects'
 import {
   EXPORT_PROMPTS,
   EXPORT_TOOL_SLUGS,
@@ -66,6 +68,24 @@ export default async function ExportToolPage({
     notFound()
   }
 
+  // Fetch user's projects if logged in
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const userProjects = user ? await getProjectsByUser(user.id) : []
+
+  let username = ''
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', user.id)
+      .single()
+    username = profile?.username ?? ''
+  }
+
   return (
     <>
       {/* Hero -------------------------------------------------------- */}
@@ -115,7 +135,11 @@ export default async function ExportToolPage({
       {/* Interactive session export ---------------------------------- */}
       <section className="pb-24 md:pb-32">
         <div className="max-w-3xl mx-auto px-4">
-          <SessionExport defaultTool={tool as ExportToolSlug} />
+          <SessionExport
+            defaultTool={tool as ExportToolSlug}
+            userProjects={userProjects}
+            username={username}
+          />
         </div>
       </section>
     </>

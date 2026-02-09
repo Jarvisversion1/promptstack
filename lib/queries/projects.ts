@@ -486,6 +486,130 @@ export async function forkProject(
 }
 
 /* ================================================================== */
+/*  getProjectsByUser (for export "append" flow)                       */
+/* ================================================================== */
+
+export type UserProjectSummary = {
+  id: string
+  title: string
+  slug: string
+  step_count: number
+  updated_at: string
+}
+
+/**
+ * Fetches all projects belonging to a user (published + drafts).
+ * Used on the export page to let users append steps to an existing project.
+ */
+export async function getProjectsByUser(
+  userId: string
+): Promise<UserProjectSummary[]> {
+  try {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id, title, slug, updated_at, steps:prompt_steps(id)')
+      .eq('author_id', userId)
+      .order('updated_at', { ascending: false })
+
+    if (error || !data) return []
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return data.map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      slug: p.slug,
+      step_count: Array.isArray(p.steps) ? p.steps.length : 0,
+      updated_at: p.updated_at,
+    }))
+  } catch {
+    return []
+  }
+}
+
+/* ================================================================== */
+/*  appendStepsToProject                                               */
+/* ================================================================== */
+
+export type AppendStepsResult = {
+  success: true
+  totalSteps: number
+}
+
+/**
+ * Appends new exported steps to an existing project.
+ * Verifies the user is the project author, finds the current max step_order,
+ * and inserts new steps starting from max_step_order + 1.
+ */
+export async function appendStepsToProject(
+  projectId: string,
+  userId: string,
+  newSteps: { title: string; prompt_text: string; context_mode: string; output_summary: string; tips?: string }[]
+): Promise<AppendStepsResult> {
+  const supabase = await createClient()
+
+  // 1. Verify ownership
+  const { data: project, error: projectError } = await supabase
+    .from('projects')
+    .select('id, author_id')
+    .eq('id', projectId)
+    .single()
+
+  if (projectError || !project) {
+    throw new Error('Project not found')
+  }
+
+  if (project.author_id !== userId) {
+    throw new Error('Not authorized')
+  }
+
+  // 2. Get current max step_order
+  const { data: existingSteps } = await supabase
+    .from('prompt_steps')
+    .select('step_order')
+    .eq('project_id', projectId)
+    .order('step_order', { ascending: false })
+    .limit(1)
+
+  const maxOrder = existingSteps?.[0]?.step_order ?? 0
+
+  // 3. Insert new steps
+  const stepRows = newSteps.map((s, i) => ({
+    project_id: projectId,
+    step_order: maxOrder + i + 1,
+    title: s.title,
+    prompt_text: s.prompt_text,
+    context_mode: s.context_mode,
+    output_notes: s.output_summary || null,
+    tips: s.tips || null,
+    fork_note: null,
+  }))
+
+  const { error: insertError } = await supabase
+    .from('prompt_steps')
+    .insert(stepRows)
+
+  if (insertError) {
+    throw new Error('Failed to insert steps')
+  }
+
+  // 4. Touch the updated_at timestamp
+  await supabase
+    .from('projects')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', projectId)
+
+  // 5. Get new total
+  const { count } = await supabase
+    .from('prompt_steps')
+    .select('*', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+
+  return { success: true, totalSteps: count ?? maxOrder + newSteps.length }
+}
+
+/* ================================================================== */
 /*  Internal helpers                                                   */
 /* ================================================================== */
 

@@ -2,6 +2,8 @@ import { Code, ClipboardPaste, Rocket } from 'lucide-react'
 import { Reveal } from '@/components/reveal'
 import { SessionExport } from '@/components/session-export'
 import { buildMetadata } from '@/lib/seo'
+import { createClient } from '@/lib/supabase/server'
+import { getProjectsByUser } from '@/lib/queries/projects'
 
 export const metadata = buildMetadata({
   title: 'Export Your AI Coding Session',
@@ -24,7 +26,26 @@ const STEPS = [
 /*  Page                                                               */
 /* ------------------------------------------------------------------ */
 
-export default function ExportPage() {
+export default async function ExportPage() {
+  // Fetch user's projects if logged in
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const userProjects = user ? await getProjectsByUser(user.id) : []
+
+  // Get the username for link construction
+  let username = ''
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', user.id)
+      .single()
+    username = profile?.username ?? ''
+  }
+
   return (
     <>
       {/* Hero -------------------------------------------------------- */}
@@ -77,7 +98,7 @@ export default function ExportPage() {
       {/* Interactive session export ---------------------------------- */}
       <section className="pb-24 md:pb-32">
         <div className="max-w-3xl mx-auto px-4">
-          <SessionExport />
+          <SessionExport userProjects={userProjects} username={username} />
         </div>
       </section>
     </>
