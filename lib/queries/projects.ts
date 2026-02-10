@@ -39,6 +39,8 @@ export async function getProjectBySlug(
   slug: string
 ): Promise<ProjectDetail | null> {
   try {
+    if (!username || !slug) return null
+
     const supabase = await createClient()
 
     const { data: project, error } = await supabase
@@ -415,6 +417,8 @@ export async function forkProject(
     ? (original as any).steps
     : []
 
+  const forkValidModes = ['inline', 'composer', 'cursor_rule', 'terminal', 'chat', 'cascade']
+
   if (steps.length > 0) {
     const stepRows = steps.map(
       (s: {
@@ -429,7 +433,7 @@ export async function forkProject(
         step_order: s.step_order,
         title: s.title,
         prompt_text: s.prompt_text,
-        context_mode: s.context_mode,
+        context_mode: s.context_mode && forkValidModes.includes(s.context_mode) ? s.context_mode : null,
         output_notes: s.output_notes,
         tips: s.tips,
         fork_note: null,
@@ -564,7 +568,7 @@ export async function appendStepsToProject(
     throw new Error('Not authorized')
   }
 
-  // 2. Get current max step_order
+  // 2. Get current max step_order (fetch ALL step_orders to be safe)
   const { data: existingSteps } = await supabase
     .from('prompt_steps')
     .select('step_order')
@@ -574,13 +578,16 @@ export async function appendStepsToProject(
 
   const maxOrder = existingSteps?.[0]?.step_order ?? 0
 
-  // 3. Insert new steps
+  // 3. Normalize context_mode — map empty/invalid values to null
+  const validModes = ['inline', 'composer', 'cursor_rule', 'terminal', 'chat', 'cascade']
+
+  // 4. Insert new steps
   const stepRows = newSteps.map((s, i) => ({
     project_id: projectId,
     step_order: maxOrder + i + 1,
     title: s.title,
     prompt_text: s.prompt_text,
-    context_mode: s.context_mode,
+    context_mode: validModes.includes(s.context_mode) ? s.context_mode : null,
     output_notes: s.output_summary || null,
     tips: s.tips || null,
     fork_note: null,
@@ -591,16 +598,16 @@ export async function appendStepsToProject(
     .insert(stepRows)
 
   if (insertError) {
-    throw new Error('Failed to insert steps')
+    throw new Error(`Failed to insert steps: ${insertError.message}`)
   }
 
-  // 4. Touch the updated_at timestamp
+  // 5. Touch the updated_at timestamp
   await supabase
     .from('projects')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', projectId)
 
-  // 5. Get new total
+  // 6. Get new total
   const { count } = await supabase
     .from('prompt_steps')
     .select('*', { count: 'exact', head: true })

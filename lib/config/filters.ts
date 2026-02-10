@@ -55,3 +55,37 @@ export const SORT_OPTIONS: FilterOption[] = [
   { label: 'Most Forks', value: 'forks' },
   { label: 'Most Discussed', value: 'discussed' },
 ]
+
+/* ================================================================== */
+/*  Suggested tags — shown as quick-add chips in the project form      */
+/* ================================================================== */
+
+export const SUGGESTED_TAGS: string[] = [
+  'nextjs',
+  'react',
+  'typescript',
+  'tailwind',
+  'supabase',
+  'prisma',
+  'postgres',
+  'python',
+  'node',
+  'express',
+  'openai',
+  'stripe',
+  'auth',
+  'saas',
+  'e-commerce',
+  'ai',
+  'api',
+  'docker',
+  'firebase',
+  'mongodb',
+  'redis',
+  'graphql',
+  'rest',
+  'testing',
+  'ci-cd',
+  'vercel',
+  'aws',
+]

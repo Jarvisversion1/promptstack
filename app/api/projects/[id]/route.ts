@@ -4,6 +4,55 @@ import { projectUpdateSchema } from '@/lib/schemas/project'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
+/**
+ * DELETE /api/projects/[id] — Delete a project (author only).
+ * Cascade in the DB will clean up steps, tags, stars, and comments.
+ */
+export async function DELETE(_request: Request, context: RouteContext) {
+  try {
+    const { id: projectId } = await context.params
+
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    // Verify ownership
+    const { data: project, error: fetchError } = await supabase
+      .from('projects')
+      .select('id, author_id')
+      .eq('id', projectId)
+      .single()
+
+    if (fetchError || !project) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
+
+    if (project.author_id !== user.id) {
+      return NextResponse.json({ error: 'You can only delete your own projects' }, { status: 403 })
+    }
+
+    // Delete — cascade handles steps, tags, stars, comments
+    const { error: deleteError } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', projectId)
+
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Something went wrong'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
 export async function PUT(request: Request, context: RouteContext) {
   try {
     const { id: projectId } = await context.params
@@ -68,7 +117,7 @@ export async function PUT(request: Request, context: RouteContext) {
         difficulty,
         demo_url: demo_url || null,
         is_published,
-        // is_approved stays as-is (only admins change this)
+        is_approved: is_published, // auto-approve on publish
       })
       .eq('id', projectId)
 
@@ -93,13 +142,15 @@ export async function PUT(request: Request, context: RouteContext) {
       )
     }
 
+    const validModes = ['inline', 'composer', 'cursor_rule', 'terminal', 'chat', 'cascade']
+
     if (steps.length > 0) {
       const stepRows = steps.map((s) => ({
         project_id: projectId,
         step_order: s.step_order,
         title: s.title,
         prompt_text: s.prompt_text,
-        context_mode: s.context_mode,
+        context_mode: s.context_mode && validModes.includes(s.context_mode) ? s.context_mode : null,
         output_notes: s.output_notes || null,
         tips: s.tips || null,
         fork_note: s.fork_note || null,

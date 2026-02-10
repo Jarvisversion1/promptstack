@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -12,9 +12,10 @@ import {
   ChevronDown,
   X,
   Loader2,
-  GitFork,
+  FileCode2,
 } from 'lucide-react'
 import { TOOLS, CATEGORIES, DIFFICULTIES, SUGGESTED_TAGS } from '@/lib/config/filters'
+import { useToast } from '@/components/toast'
 
 /* ================================================================== */
 /*  Types                                                              */
@@ -39,22 +40,15 @@ type ProjectFormData = {
   demo_url: string
   tags: string[]
   steps: StepData[]
-  is_published: boolean
 }
 
-type ForkOrigin = {
+type ImportedStep = {
+  step_order: number
   title: string
-  slug: string
-  authorUsername: string
-}
-
-type ProjectEditorProps = {
-  projectId: string
-  slug: string
-  authorUsername: string
-  initialData: ProjectFormData
-  forkedFromId: string | null
-  forkOrigin: ForkOrigin | null
+  prompt_text: string
+  context_mode: string
+  output_summary: string
+  tips: string
 }
 
 const CONTEXT_MODES = [
@@ -68,26 +62,138 @@ const CONTEXT_MODES = [
 ]
 
 /* ================================================================== */
+/*  Auto-extract tech stack tags from step content                      */
+/* ================================================================== */
+
+const TAG_KEYWORDS: Record<string, string[]> = {
+  nextjs: ['next.js', 'nextjs', 'next js', 'app router', 'next/'],
+  react: ['react', 'jsx', 'tsx', 'usestate', 'useeffect', 'react-dom'],
+  typescript: ['typescript', '.tsx', '.ts', 'type ', 'interface '],
+  tailwind: ['tailwind', 'tailwindcss', 'className='],
+  supabase: ['supabase', 'createclient', 'supabase.from'],
+  prisma: ['prisma', 'prismaClient', '@prisma'],
+  postgres: ['postgres', 'postgresql', 'pg_', 'psql'],
+  mongodb: ['mongodb', 'mongoose', 'mongo'],
+  python: ['python', '.py', 'pip install', 'flask', 'django', 'fastapi'],
+  node: ['node.js', 'nodejs', 'npm ', 'package.json'],
+  express: ['express', 'app.get', 'app.post', 'router.'],
+  openai: ['openai', 'gpt-4', 'gpt-3', 'chatgpt', 'dall-e'],
+  stripe: ['stripe', 'payment', 'checkout session'],
+  firebase: ['firebase', 'firestore', 'firebase auth'],
+  redis: ['redis', 'upstash'],
+  docker: ['docker', 'dockerfile', 'docker-compose'],
+  graphql: ['graphql', 'apollo', 'gql`'],
+  vue: ['vue', 'vuejs', 'nuxt'],
+  svelte: ['svelte', 'sveltekit'],
+  aws: ['aws', 'lambda', 's3 bucket', 'dynamodb', 'ec2'],
+  vercel: ['vercel', 'vercel.json', 'vercel deploy'],
+  auth: ['auth', 'oauth', 'jwt', 'session', 'login'],
+  saas: ['saas', 'subscription', 'billing', 'tenant'],
+  ai: ['ai', 'llm', 'embedding', 'vector', 'langchain', 'rag'],
+  'e-commerce': ['e-commerce', 'ecommerce', 'cart', 'product catalog', 'checkout'],
+  testing: ['jest', 'vitest', 'cypress', 'playwright', 'test('],
+  'ci-cd': ['ci/cd', 'github actions', 'pipeline', '.yml'],
+  fastapi: ['fastapi', 'fast api', 'uvicorn'],
+  flask: ['flask', 'from flask'],
+  django: ['django', 'from django'],
+  angular: ['angular', '@angular'],
+  'react-native': ['react native', 'react-native', 'expo'],
+  flutter: ['flutter', 'dart'],
+  rust: ['rust', 'cargo', '.rs'],
+  go: ['golang', ' go ', 'go.mod', 'go.sum'],
+}
+
+function extractTagsFromSteps(steps: ImportedStep[]): string[] {
+  const allText = steps
+    .map((s) => `${s.title} ${s.prompt_text} ${s.output_summary} ${s.tips}`)
+    .join(' ')
+    .toLowerCase()
+
+  const found: string[] = []
+
+  for (const [tag, keywords] of Object.entries(TAG_KEYWORDS)) {
+    if (keywords.some((kw) => allText.includes(kw.toLowerCase()))) {
+      found.push(tag)
+    }
+  }
+
+  // Cap at 10
+  return found.slice(0, 10)
+}
+
+/* ================================================================== */
 /*  Component                                                          */
 /* ================================================================== */
 
-export const ProjectEditor = ({
-  projectId,
-  slug,
-  authorUsername,
-  initialData,
-  forkedFromId,
-  forkOrigin,
-}: ProjectEditorProps) => {
+export const NewProjectForm = () => {
   const router = useRouter()
-  const [form, setForm] = useState<ProjectFormData>(initialData)
+  const { toast } = useToast()
   const [saving, setSaving] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [tagInput, setTagInput] = useState('')
+  const [loaded, setLoaded] = useState(false)
 
-  const isFork = !!forkedFromId
+  const [form, setForm] = useState<ProjectFormData>({
+    title: '',
+    description: '',
+    tool: 'cursor',
+    category: 'other',
+    difficulty: null,
+    demo_url: '',
+    tags: [],
+    steps: [
+      {
+        step_order: 1,
+        title: '',
+        prompt_text: '',
+        context_mode: null,
+        output_notes: '',
+        tips: '',
+        fork_note: '',
+      },
+    ],
+  })
+
+  /* ================================================================ */
+  /*  Load imported steps from sessionStorage                          */
+  /* ================================================================ */
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('promptstack_export')
+      if (raw) {
+        const imported: ImportedStep[] = JSON.parse(raw)
+        if (Array.isArray(imported) && imported.length > 0) {
+          const steps: StepData[] = imported.map((s, i) => ({
+            step_order: i + 1,
+            title: s.title || `Step ${i + 1}`,
+            prompt_text: s.prompt_text || '',
+            context_mode: s.context_mode || null,
+            output_notes: s.output_summary || '',
+            tips: s.tips || '',
+            fork_note: '',
+          }))
+
+          // Auto-extract tags from step content
+          const autoTags = extractTagsFromSteps(imported)
+
+          setForm((prev) => ({
+            ...prev,
+            steps,
+            tags: autoTags,
+          }))
+
+          // Clear sessionStorage so it doesn't reload on revisit
+          sessionStorage.removeItem('promptstack_export')
+        }
+      }
+    } catch {
+      // sessionStorage unavailable or invalid data
+    }
+    setLoaded(true)
+  }, [])
 
   /* ================================================================ */
   /*  Field updaters                                                   */
@@ -201,7 +307,7 @@ export const ProjectEditor = ({
       }
 
       try {
-        // Basic client-side validation
+        // Client-side validation
         if (!form.title.trim()) throw new Error('Title is required')
         if (form.steps.length === 0)
           throw new Error('At least one step is required')
@@ -223,89 +329,93 @@ export const ProjectEditor = ({
             context_mode: s.context_mode || null,
             output_notes: s.output_notes.trim() || null,
             tips: s.tips.trim() || null,
-            fork_note: s.fork_note.trim() || null,
+            fork_note: null,
           })),
           is_published: publish,
         }
 
-        const res = await fetch(`/api/projects/${projectId}`, {
-          method: 'PUT',
+        const res = await fetch('/api/projects', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
 
         if (!res.ok) {
           const data = await res.json()
-          throw new Error(data.error ?? 'Failed to save')
+          throw new Error(data.error ?? 'Failed to create project')
         }
+
+        const result = await res.json()
 
         if (publish) {
           setSuccess('Published! Your project is now live on PromptStack.')
-          // Redirect to the project view after a short delay
+          toast('Project published!', 'success')
           setTimeout(() => {
-            router.push(`/@${authorUsername}/${slug}`)
+            router.push(`/@${result.authorUsername}/${result.slug}`)
           }, 1500)
         } else {
-          setSuccess('Draft saved.')
-          // Update form state to reflect saved draft
-          setForm((prev) => ({ ...prev, is_published: false }))
+          setSuccess('Draft saved!')
+          toast('Draft saved', 'success')
+          setTimeout(() => {
+            router.push(
+              `/@${result.authorUsername}/${result.slug}/edit`
+            )
+          }, 1000)
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Something went wrong')
+        const message =
+          err instanceof Error ? err.message : 'Something went wrong'
+        setError(message)
+        toast(message, 'error')
       } finally {
         setSaving(false)
         setPublishing(false)
       }
     },
-    [
-      form,
-      saving,
-      publishing,
-      projectId,
-      authorUsername,
-      slug,
-      router,
-    ]
+    [form, saving, publishing, router, toast]
   )
 
   /* ================================================================ */
   /*  Render                                                           */
   /* ================================================================ */
 
+  if (!loaded) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 size={24} className="animate-spin text-[#3ddc84]/50" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
-      {/* ============================================================ */}
-      {/*  Fork banner                                                  */}
-      {/* ============================================================ */}
-      {isFork && forkOrigin && (
-        <div className="flex items-center gap-2 bg-[#3b82f6]/[0.06] border border-[#3b82f6]/15 rounded-lg px-4 py-3">
-          <GitFork size={15} className="text-[#3b82f6]/60 shrink-0" />
-          <p className="font-mono text-xs text-[#3b82f6]/70">
-            You{"'"}re editing a remix of{' '}
-            <Link
-              href={`/@${forkOrigin.authorUsername}/${forkOrigin.slug}`}
-              className="text-[#3b82f6] hover:underline"
-            >
-              @{forkOrigin.authorUsername}/{forkOrigin.title}
-            </Link>
-          </p>
-        </div>
-      )}
-
       {/* ============================================================ */}
       {/*  Page header                                                  */}
       {/* ============================================================ */}
       <div className="flex items-center justify-between">
-        <h1 className="font-mono text-lg md:text-xl font-bold tracking-tight">
-          {isFork ? '// Edit Remix' : '// Edit Project'}
-        </h1>
+        <div className="flex items-center gap-3">
+          <FileCode2 size={20} className="text-[#3ddc84]" />
+          <h1 className="font-mono text-lg md:text-xl font-bold tracking-tight">
+            {'// New Project'}
+          </h1>
+        </div>
         <Link
-          href={`/@${authorUsername}/${slug}`}
+          href="/export"
           className="font-mono text-xs text-[#e8e8ed]/30 hover:text-[#e8e8ed]/60 transition-colors"
         >
-          View project →
+          Back to export
         </Link>
       </div>
+
+      {form.steps.length > 1 && (
+        <div className="flex items-center gap-2 bg-[#3ddc84]/[0.06] border border-[#3ddc84]/15 rounded-lg px-4 py-3">
+          <FileCode2 size={15} className="text-[#3ddc84]/60 shrink-0" />
+          <p className="font-mono text-xs text-[#3ddc84]/70">
+            {form.steps.length} steps imported from your session export. Fill in
+            the project details below and publish.
+          </p>
+        </div>
+      )}
 
       {/* ============================================================ */}
       {/*  Status messages                                              */}
@@ -485,7 +595,6 @@ export const ProjectEditor = ({
               step={step}
               index={index}
               total={form.steps.length}
-              isFork={isFork}
               onUpdate={(key, value) => updateStep(index, key, value)}
               onRemove={() => removeStep(index)}
               onMove={(dir) => moveStep(index, dir)}
@@ -536,7 +645,7 @@ export const ProjectEditor = ({
         </button>
 
         <Link
-          href={`/@${authorUsername}/${slug}`}
+          href="/export"
           className="ml-auto font-mono text-xs text-[#e8e8ed]/30 hover:text-[#e8e8ed]/60 transition-colors"
         >
           Cancel
@@ -554,7 +663,6 @@ const StepEditor = ({
   step,
   index,
   total,
-  isFork,
   onUpdate,
   onRemove,
   onMove,
@@ -562,7 +670,6 @@ const StepEditor = ({
   step: StepData
   index: number
   total: number
-  isFork: boolean
   onUpdate: (key: keyof StepData, value: string | number | null) => void
   onRemove: () => void
   onMove: (direction: 'up' | 'down') => void
@@ -696,22 +803,6 @@ const StepEditor = ({
             placeholder="Any gotchas or tips for this step?"
           />
         </div>
-
-        {/* Fork note — only for forked projects */}
-        {isFork && (
-          <div>
-            <label className="block font-mono text-[10px] text-[#3b82f6]/60 uppercase tracking-wider mb-1.5">
-              Why did you change this step?
-            </label>
-            <textarea
-              value={step.fork_note}
-              onChange={(e) => onUpdate('fork_note', e.target.value)}
-              rows={2}
-              className="input-field resize-y text-xs !border-[#3b82f6]/15 focus:!border-[#3b82f6]/40 focus:!ring-[#3b82f6]/20"
-              placeholder="Explain what you changed and why..."
-            />
-          </div>
-        )}
       </div>
     </div>
   )

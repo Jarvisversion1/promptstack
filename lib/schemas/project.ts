@@ -50,7 +50,10 @@ export const projectUpdateSchema = z.object({
     .enum(['beginner', 'intermediate', 'advanced'])
     .nullable()
     .default(null),
-  demo_url: z.string().url().max(500).nullable().default(null).or(z.literal('')),
+  demo_url: z
+    .union([z.string().url().max(500), z.literal(''), z.null()])
+    .default(null)
+    .transform((v) => (v === '' ? null : v)),
   tags: z.array(z.string().min(1).max(50)).max(10).default([]),
   steps: z.array(stepSchema).min(1, 'At least one step is required'),
   is_published: z.boolean(),

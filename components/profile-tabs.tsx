@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useTransition } from 'react'
+import { useCallback, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Compass } from 'lucide-react'
+import { Plus, Compass, Pencil, Trash2, Loader2 } from 'lucide-react'
 import { ProjectCard } from '@/components/project-card'
+import { useToast } from '@/components/toast'
 import type { ProjectWithDetails } from '@/types/project'
 import type { ForkedProject } from '@/lib/queries/profiles'
 
@@ -47,13 +48,14 @@ const VALID_TABS = new Set<string>(['projects', 'remixes', 'starred'])
 export const ProfileTabs = ({
   username,
   isOwnProfile,
-  projects,
+  projects: initialProjects,
   remixes,
   starred,
 }: ProfileTabsProps) => {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [, startTransition] = useTransition()
+  const [projects, setProjects] = useState(initialProjects)
 
   const rawTab = searchParams.get('tab')
   const activeTab: TabId =
@@ -75,6 +77,13 @@ export const ProfileTabs = ({
       })
     },
     [router, searchParams, username, startTransition]
+  )
+
+  const handleDelete = useCallback(
+    (projectId: string) => {
+      setProjects((prev) => prev.filter((p) => p.id !== projectId))
+    },
+    []
   )
 
   return (
@@ -103,7 +112,6 @@ export const ProfileTabs = ({
               >
                 ({tab.count})
               </span>
-              {/* Active indicator */}
               {activeTab === tab.id && (
                 <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#3ddc84] rounded-full" />
               )}
@@ -118,6 +126,7 @@ export const ProfileTabs = ({
           projects={projects}
           isOwnProfile={isOwnProfile}
           username={username}
+          onDelete={handleDelete}
         />
       )}
       {activeTab === 'remixes' && <RemixesTab remixes={remixes} />}
@@ -134,10 +143,12 @@ const ProjectsTab = ({
   projects,
   isOwnProfile,
   username,
+  onDelete,
 }: {
   projects: ProjectWithDetails[]
   isOwnProfile: boolean
   username: string
+  onDelete: (id: string) => void
 }) => {
   if (projects.length === 0) {
     return (
@@ -155,17 +166,16 @@ const ProjectsTab = ({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {projects.map((project) => (
-        <div key={project.id} className="relative">
+        <div key={project.id} className="flex flex-col">
           <ProjectCard project={project} />
-          {/* Draft / pending badge for own profile */}
-          {isOwnProfile && !project.is_published && (
-            <StatusBadge label="Draft" color="#f59e0b" />
+          {/* Management bar — only on own profile */}
+          {isOwnProfile && (
+            <ProjectManageBar
+              project={project}
+              username={username}
+              onDelete={onDelete}
+            />
           )}
-          {isOwnProfile &&
-            project.is_published &&
-            !project.is_approved && (
-              <StatusBadge label="Pending" color="#3b82f6" />
-            )}
         </div>
       ))}
       {/* Quick-add card for own profile */}
@@ -182,6 +192,104 @@ const ProjectsTab = ({
             New project
           </span>
         </Link>
+      )}
+    </div>
+  )
+}
+
+/* ================================================================== */
+/*  Project manage bar — status + edit + delete                        */
+/* ================================================================== */
+
+const ProjectManageBar = ({
+  project,
+  username,
+  onDelete,
+}: {
+  project: ProjectWithDetails
+  username: string
+  onDelete: (id: string) => void
+}) => {
+  const { toast } = useToast()
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const status = !project.is_published
+    ? { label: 'Draft', color: '#f59e0b' }
+    : !project.is_approved
+      ? { label: 'Needs re-publish', color: '#3b82f6' }
+      : null
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Failed to delete')
+      }
+      toast('Project deleted', 'success')
+      onDelete(project.id)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to delete', 'error')
+      setConfirmDelete(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-1.5 px-1">
+      {/* Status badge */}
+      {status && (
+        <span
+          className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded"
+          style={{ backgroundColor: `${status.color}18`, color: status.color }}
+        >
+          {status.label}
+        </span>
+      )}
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Edit */}
+      <Link
+        href={`/@${username}/${project.slug}/edit`}
+        className="flex items-center gap-1 font-mono text-[10px] text-[#e8e8ed]/25 hover:text-[#3ddc84]/70 transition-colors px-1.5 py-0.5 rounded hover:bg-[#3ddc84]/[0.05]"
+      >
+        <Pencil size={10} />
+        Edit
+      </Link>
+
+      {/* Delete */}
+      {confirmDelete ? (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="flex items-center gap-1 font-mono text-[10px] text-red-400 hover:text-red-300 transition-colors px-1.5 py-0.5 rounded bg-red-500/10 hover:bg-red-500/20 disabled:opacity-50"
+          >
+            {deleting ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
+            {deleting ? 'Deleting...' : 'Confirm'}
+          </button>
+          <button
+            onClick={() => setConfirmDelete(false)}
+            className="font-mono text-[10px] text-[#e8e8ed]/25 hover:text-[#e8e8ed]/50 transition-colors px-1.5 py-0.5"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirmDelete(true)}
+          className="flex items-center gap-1 font-mono text-[10px] text-[#e8e8ed]/25 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded hover:bg-red-500/[0.05]"
+        >
+          <Trash2 size={10} />
+          Delete
+        </button>
       )}
     </div>
   )
@@ -250,15 +358,6 @@ const StarredTab = ({ starred }: { starred: ProjectWithDetails[] }) => {
 /* ================================================================== */
 /*  Shared helpers                                                     */
 /* ================================================================== */
-
-const StatusBadge = ({ label, color }: { label: string; color: string }) => (
-  <span
-    className="absolute top-3 right-3 z-10 font-mono text-[10px] font-semibold px-2 py-0.5 rounded"
-    style={{ backgroundColor: `${color}18`, color }}
-  >
-    {label}
-  </span>
-)
 
 const EmptyState = ({
   message,

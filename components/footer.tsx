@@ -12,22 +12,12 @@ export const Footer = () => {
 
           {/* Links */}
           <div className="flex items-center gap-6">
-            <Link
-              href="https://twitter.com/promptstack"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-sm text-[#e8e8ed]/50 hover:text-[#e8e8ed] transition-colors"
-            >
-              twitter
-            </Link>
-            <Link
-              href="https://github.com/promptstack"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-sm text-[#e8e8ed]/50 hover:text-[#e8e8ed] transition-colors"
-            >
-              github
-            </Link>
+            <span className="font-mono text-sm text-[#e8e8ed]/20 cursor-default select-none">
+              twitter <span className="text-[10px]">(coming soon)</span>
+            </span>
+            <span className="font-mono text-sm text-[#e8e8ed]/20 cursor-default select-none">
+              github <span className="text-[10px]">(coming soon)</span>
+            </span>
             <Link
               href="/contact"
               className="font-mono text-sm text-[#e8e8ed]/50 hover:text-[#e8e8ed] transition-colors"
