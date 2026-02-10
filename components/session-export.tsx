@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -60,6 +60,16 @@ export const SessionExport = ({
   /* Copy state */
   const [copied, setCopied] = useState(false)
 
+  /* Guide callout dismissal */
+  const [showGuideCallout, setShowGuideCallout] = useState(true)
+
+  useEffect(() => {
+    const dismissed = localStorage.getItem('promptstack_guide_dismissed')
+    if (dismissed === 'true') {
+      setShowGuideCallout(false)
+    }
+  }, [])
+
   /* Export mode state */
   const [mode, setMode] = useState<ExportMode>('new')
   const [selectedProjectId, setSelectedProjectId] = useState<string>(
@@ -86,6 +96,11 @@ export const SessionExport = ({
   /* -------------------------------------------------------------- */
   /*  Handlers                                                       */
   /* -------------------------------------------------------------- */
+
+  const handleDismissGuide = useCallback(() => {
+    setShowGuideCallout(false)
+    localStorage.setItem('promptstack_guide_dismissed', 'true')
+  }, [])
 
   const handleCopy = useCallback(async () => {
     try {
@@ -201,8 +216,44 @@ export const SessionExport = ({
   /*  Render                                                         */
   /* -------------------------------------------------------------- */
 
+  // Determine guide link based on tool
+  const singleWindowTools: ExportToolSlug[] = ['lovable', 'bolt', 'replit']
+  const guideSection = singleWindowTools.includes(selectedTool)
+    ? 'single-window-tools'
+    : 'multi-chat-tools'
+
   return (
     <div className="space-y-16">
+      {/* ========================================================== */}
+      {/*  Guide Callout (dismissible)                                */}
+      {/* ========================================================== */}
+      {showGuideCallout && (
+        <div className="bg-[#0c0c0f] border-l-2 border-[#3ddc84] rounded-lg p-5 flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <p className="text-[#e8e8ed] font-semibold mb-1">
+              First time exporting?
+            </p>
+            <p className="text-[#e8e8ed]/70 text-sm">
+              Read the{' '}
+              <Link
+                href={`/guide#${guideSection}`}
+                className="text-[#3ddc84] hover:underline"
+              >
+                guide for your tool
+              </Link>{' '}
+              — it takes 2 minutes and saves you from common mistakes.
+            </p>
+          </div>
+          <button
+            onClick={handleDismissGuide}
+            className="text-[#e8e8ed]/30 hover:text-[#e8e8ed]/70 transition-colors shrink-0"
+            aria-label="Dismiss"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* ========================================================== */}
       {/*  Step 1 — Tool Selector + Meta-Prompt                      */}
       {/* ========================================================== */}

@@ -25,6 +25,12 @@ export const Nav = () => {
             explore
           </Link>
           <Link
+            href="/guide"
+            className="hidden md:inline-block font-mono text-sm text-[#e8e8ed]/70 hover:text-[#e8e8ed] transition-colors"
+          >
+            guide
+          </Link>
+          <Link
             href="/export"
             className="hidden md:inline-block font-mono text-sm text-[#e8e8ed]/70 hover:text-[#e8e8ed] transition-colors"
           >

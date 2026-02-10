@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { Nav } from "@/components/nav"
+import { WelcomeBanner } from "@/components/welcome-banner"
 import { Footer } from "@/components/footer"
 import { ToastProvider } from "@/components/toast"
 
@@ -42,6 +43,7 @@ export default function RootLayout({
       <body className={`${jetbrainsMono.variable} antialiased bg-[#09090b] text-[#e8e8ed]`}>
         <ToastProvider>
           <Nav />
+          <WelcomeBanner />
           <main className="min-h-screen pt-14">
             {children}
           </main>
